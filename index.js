@@ -174,7 +174,7 @@ app.post('/job', JobUpload.single('poster'), (req, res) => {
         .then(result => {
             res.json('Job created successfully');
         })
-        .catch(err => {
+        .catch(err => { 
             console.error('Error creating job:', err);
             res.status(500).json({ error: 'Error creating job', details: err.message });
         });
