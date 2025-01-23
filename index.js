@@ -131,7 +131,7 @@ app.post('/company', upload.single('image'), (req, res) => {
     request.input('compName', sql.NVarChar, compName);
     request.input('compDesc', sql.NVarChar, compDesc);
     request.input('image', sql.NVarChar, image);
-    request.input('compLoc', sql.NVarChar, compLoc);
+    request.input('compLoc', sql.NVarChar, compLoc); 
 
     request.query(query)
         .then(result => {
