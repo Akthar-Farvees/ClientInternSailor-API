@@ -1,3 +1,4 @@
+import DotEnv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -6,6 +7,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import sql from 'mssql'; // Import the mssql package
 
+DotEnv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -37,18 +39,14 @@ const upload = multer({
     storage: storage
 });
 
-const imagePath = 'D:\\Lg Img\\99x.jpeg';
 
 // Configure your SQL Server connection
 const config = {
-    user: 'sa',
-    password: '0028',
-    server: 'LAP_AKTHAR',  // SQL Server host
-    database: 'JOB PORTAL', // Database name
-    options: {
-        encrypt: true, // for Azure
-        trustServerCertificate: true, // change to true for local development
-    }
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER,  // SQL Server host
+    database: process.env.DB_NAME, // Database name
+    options: {encrypt: true, trustServerCertificate: true, }
 };
 
 // Database connectivity check and connection
