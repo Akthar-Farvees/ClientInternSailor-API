@@ -51,7 +51,7 @@ const upload = multer({
 });
 
 // Configure your SQL Server connection
-const config = {
+const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   server: process.env.DB_SERVER, // SQL Server host
@@ -61,7 +61,7 @@ const config = {
 
 // Database connectivity check and connection
 sql
-  .connect(config)
+  .connect(dbConfig)
   .then((pool) => {
     console.log("Connected to SQL Server");
     // You can now query the database
@@ -84,12 +84,21 @@ const generateOTP = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
 // Registration API
-app.post("/register", async (req, res) => {
+app.post("/register", upload.single("companyLogo"), async (req, res) => {
   try {
     console.log("Request received:", req.body);
 
-    const { firstName, lastName, username, email, userMobile, password } =
-      req.body;
+    const {
+      firstName,
+      lastName,
+      username,
+      email,
+      companyName,
+      companyDescription,
+      companyLocation,
+      userMobile,
+      password,
+    } = req.body;
     const companyLogo = req.file ? req.file.filename : null;
 
     if (
@@ -98,7 +107,10 @@ app.post("/register", async (req, res) => {
       !username ||
       !email ||
       !password ||
-      !userMobile
+      !userMobile ||
+      !companyName ||
+      !companyDescription ||
+      !companyLocation
     ) {
       return res
         .status(400)
@@ -108,7 +120,7 @@ app.post("/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     console.log("Connecting to database...");
-    await sql.connect(config);
+    await sql.connect(dbConfig);
 
     // Check if user exists already by email or username
     const userCheckQuery = `SELECT * FROM CompanyUser WHERE Email = @email OR username = @username`;
@@ -138,6 +150,18 @@ app.post("/register", async (req, res) => {
     insertUserRequest.input("userMobile", sql.VarChar, userMobile);
     insertUserRequest.input("otp", sql.Int, otp);
     await insertUserRequest.query(insertUserQuery);
+
+    // Insert into Company table
+    const insertCompanyQuery = `
+      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation) 
+      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation)
+    `;
+    const insertCompanyRequest = new sql.Request();
+    insertCompanyRequest.input("companyName", sql.VarChar, companyName);
+    insertCompanyRequest.input("companyDescription", sql.VarChar, companyDescription);
+    insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
+    insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
+    await insertCompanyRequest.query(insertCompanyQuery);
 
     // Send OTP email
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -169,6 +193,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
+
 // Verify OTP API
 app.post("/verify-otp", async (req, res) => {
   try {
@@ -178,7 +203,7 @@ app.post("/verify-otp", async (req, res) => {
       return res.status(400).json({ message: "Email and OTP are required." });
     }
 
-    await sql.connect(config);
+    await sql.connect(dbConfig);
 
     const request = new sql.Request();
     request.input("email", sql.NVarChar, email);
@@ -209,7 +234,7 @@ app.post("/admin-approve", async (req, res) => {
   try {
     const { email } = req.body;
 
-    await sql.connect(config);
+    await sql.connect(dbConfig);
 
     const request = new sql.Request();
     request.input("email", sql.NVarChar, email);
