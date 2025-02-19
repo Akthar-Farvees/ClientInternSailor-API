@@ -8,9 +8,11 @@ import moment from "moment-timezone";
 import sql from "mssql"; // Import the mssql package
 
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import { fileURLToPath } from "url";
+import authRoutes from "./routes/authRoutes.js";
+
+import dbConfig, { connectDB } from "./database/dbConfig.js";
 
 DotEnv.config();
 const app = express();
@@ -51,24 +53,7 @@ const upload = multer({
 });
 
 // Configure your SQL Server connection
-const dbConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER, // SQL Server host
-  database: process.env.DB_NAME, // Database name
-  options: { encrypt: true, trustServerCertificate: true },
-};
-
-// Database connectivity check and connection
-sql
-  .connect(dbConfig)
-  .then((pool) => {
-    console.log("Connected to SQL Server");
-    // You can now query the database
-  })
-  .catch((err) => {
-    console.error("Error connecting to SQL Server:", err);
-  });
+connectDB();
 
 // Nodemailer Transporter (for OTP emails)
 const transporter = nodemailer.createTransport({
@@ -130,16 +115,17 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     const userCheck = await userCheckRequest.query(userCheckQuery);
 
     if (userCheck.recordset.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "Email or Username is already registered." });
+      return res.status(400).json({
+        error: "EMAIL_USERNAME_ALREADY_REGISTERED",
+        message: "Email or Username is already registered.",
+      });
     }
 
     // Generate OTP
     const otp = generateOTP();
     const insertUserQuery = `
-        INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP) 
-        VALUES (@firstName, @lastName, @username, @email, @hashedPassword, @userMobile, 'OTP_PENDING', @otp)
+        INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP, LastOTPRequestedAt, CompanyCreatedDate) 
+        VALUES (@firstName, @lastName, @username, @email, @hashedPassword, @userMobile, 'OTP_PENDING', @otp, GETUTCDATE(), GETDATE())
       `;
     const insertUserRequest = new sql.Request();
     insertUserRequest.input("firstName", sql.VarChar, firstName);
@@ -158,7 +144,11 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     `;
     const insertCompanyRequest = new sql.Request();
     insertCompanyRequest.input("companyName", sql.VarChar, companyName);
-    insertCompanyRequest.input("companyDescription", sql.VarChar, companyDescription);
+    insertCompanyRequest.input(
+      "companyDescription",
+      sql.VarChar,
+      companyDescription
+    );
     insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
     insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
     await insertCompanyRequest.query(insertCompanyQuery);
@@ -192,7 +182,6 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
       .json({ message: "Internal Server Error", error: error.message });
   }
 });
-
 
 // Verify OTP API
 app.post("/verify-otp", async (req, res) => {
@@ -260,6 +249,103 @@ app.post("/admin-approve", async (req, res) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
+// Resend OTP API
+app.post("/resend-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required." });
+    }
+
+    console.log(`Resend OTP requested for: ${email}`);
+
+    // Connect to DB
+    await sql.connect(dbConfig);
+
+    // Fetch user's last OTP request time
+    const userQuery = `
+      SELECT OTP, LastOTPRequestedAt FROM CompanyUser WHERE Email = @email
+    `;
+    const userRequest = new sql.Request();
+    userRequest.input("email", sql.VarChar, email);
+    const userResult = await userRequest.query(userQuery);
+
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({
+        error: "USER_NOT_FOUND",
+        message: "User with this email does not exist.",
+      });
+    }
+
+    const { LastOTPRequestedAt } = userResult.recordset[0];
+    const now = new Date();
+
+    if (LastOTPRequestedAt) {
+      // Convert SQL timestamp to UTC-based JavaScript Date
+      const lastRequestTime = new Date(LastOTPRequestedAt);
+
+      // Ensure proper timezone handling
+      const lastRequestUTC = new Date(lastRequestTime); // Keep it as UTC
+
+
+      const timeDifference = Math.floor((now - lastRequestUTC) / 1000); // Convert ms to seconds
+
+      if (timeDifference < 60) {
+        return res.status(429).json({
+          error: "OTP_REQUEST_TOO_SOON",
+          message: `Please wait ${60 - timeDifference} seconds before requesting a new OTP. ${lastRequestUTC}`,
+        });
+      }
+    }
+
+    // Generate new OTP
+    const newOtp = generateOTP();
+
+    // Update OTP and timestamp in DB
+    const updateOtpQuery = `
+      UPDATE CompanyUser 
+      SET OTP = @otp, LastOTPRequestedAt = GETUTCDATE() 
+      WHERE Email = @email
+    `;
+    const updateOtpRequest = new sql.Request();
+    updateOtpRequest.input("otp", sql.Int, newOtp);
+    updateOtpRequest.input("email", sql.VarChar, email);
+    await updateOtpRequest.query(updateOtpQuery);
+
+    // Send OTP email
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const otpTemplatePath = path.join(__dirname, "otpTemplate.html");
+    const htmlTemplate = fs.readFileSync(otpTemplatePath, "utf8");
+
+    const htmlContent = htmlTemplate
+      .replace("{{otp}}", newOtp)
+      .replace("{{year}}", new Date().getFullYear());
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Your OTP Code (Resent)",
+      html: htmlContent,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    console.log(`New OTP sent to ${email}`);
+    return res.status(200).json({ message: "New OTP sent successfully." });
+
+  } catch (error) {
+    console.error("Error in resending OTP:", error);
+    return res.status(500).json({ message: "Internal Server Error", error: error.message });
+  }
+});
+
+
+
+
+// Auth Route
+app.use("/api/auth", authRoutes);
 
 // ---------------------------------------------
 // Route to get job and company details
