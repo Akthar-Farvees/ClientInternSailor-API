@@ -202,7 +202,7 @@ app.post("/verify-otp", async (req, res) => {
     const result = await request.query(otpQuery);
 
     if (result.recordset.length === 0) {
-      return res.status(400).json({ message: "Invalid OTP or expired." });
+      return res.status(400).json({ error: "INVALID_OR_EXPIRED_OTP", message: "Invalid OTP or expired." });
     }
 
     // Update status to waiting for admin approval
@@ -292,7 +292,7 @@ app.post("/resend-otp", async (req, res) => {
 
       const timeDifference = Math.floor((now - lastRequestUTC) / 1000); // Convert ms to seconds
 
-      if (timeDifference < 60) {
+      if (timeDifference < 30) {
         return res.status(429).json({
           error: "OTP_REQUEST_TOO_SOON",
           message: `Please wait ${60 - timeDifference} seconds before requesting a new OTP. ${lastRequestUTC}`,
