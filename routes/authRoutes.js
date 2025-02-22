@@ -35,11 +35,11 @@ router.post("/login", async (req, res) => {
 
         // Check user status
         if (user.Status === "OTP_PENDING") {
-            return res.status(403).json({ error: "OTP verification pending. Please verify your email." });
+            return res.status(403).json({ error: "OTP_PENDING" });
         } else if (user.Status === "WAITING_FOR_ADMIN") {
-            return res.status(403).json({ error: "Waiting for admin approval. Please contact support." });
+            return res.status(403).json({ error: "WAITING_FOR_ADMIN" });
         } else if (user.Status !== "ACTIVE") {
-            return res.status(403).json({ error: "Your account is not active. Please contact support." });
+            return res.status(403).json({ error: "Your account is not activated." });
         }
 
         const isMatch = await bcrypt.compare(password, user.Password);
