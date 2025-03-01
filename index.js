@@ -123,10 +123,26 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
 
     // Generate OTP
     const otp = generateOTP();
+
+    const insertCompanyQuery = `
+      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation) 
+      OUTPUT INSERTED.CompanyId
+      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation)
+    `;
+    const insertCompanyRequest = new sql.Request();
+    insertCompanyRequest.input("companyName", sql.VarChar, companyName);
+    insertCompanyRequest.input("companyDescription", sql.VarChar, companyDescription);
+    insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
+    insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
+
+    const companyResult = await insertCompanyRequest.query(insertCompanyQuery);
+    const companyId = companyResult.recordset[0].CompanyId; // Get the inserted CompanyId
+
+    // Insert into CompanyUser with the retrieved CompanyId
     const insertUserQuery = `
-        INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP, LastOTPRequestedAt, CompanyCreatedDate) 
-        VALUES (@firstName, @lastName, @username, @email, @hashedPassword, @userMobile, 'OTP_PENDING', @otp, GETUTCDATE(), GETDATE())
-      `;
+      INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP, LastOTPRequestedAt, CompanyCreatedDate, CompanyId) 
+      VALUES (@firstName, @lastName, @username, @email, @hashedPassword, @userMobile, 'OTP_PENDING', @otp, GETUTCDATE(), GETDATE(), @companyId)
+    `;
     const insertUserRequest = new sql.Request();
     insertUserRequest.input("firstName", sql.VarChar, firstName);
     insertUserRequest.input("lastName", sql.VarChar, lastName);
@@ -135,23 +151,9 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     insertUserRequest.input("hashedPassword", sql.VarChar, hashedPassword);
     insertUserRequest.input("userMobile", sql.VarChar, userMobile);
     insertUserRequest.input("otp", sql.Int, otp);
-    await insertUserRequest.query(insertUserQuery);
+    insertUserRequest.input("companyId", sql.UniqueIdentifier, companyId); // Add CompanyId
 
-    // Insert into Company table
-    const insertCompanyQuery = `
-      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation) 
-      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation)
-    `;
-    const insertCompanyRequest = new sql.Request();
-    insertCompanyRequest.input("companyName", sql.VarChar, companyName);
-    insertCompanyRequest.input(
-      "companyDescription",
-      sql.VarChar,
-      companyDescription
-    );
-    insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
-    insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
-    await insertCompanyRequest.query(insertCompanyQuery);
+    await insertUserRequest.query(insertUserQuery);
 
     // Send OTP email
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
