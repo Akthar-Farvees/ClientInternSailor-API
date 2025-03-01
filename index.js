@@ -428,7 +428,7 @@ app.post("/company", upload.single("image"), (req, res) => {
 });
 
 // Job Registration
-app.post("/job", JobUpload.single("poster"), (req, res) => {
+app.post("/job", JobUpload.single("image"), (req, res) => {
   const { jobName, position, description, requirements, type, companyId } =
     req.body;
 
@@ -461,6 +461,50 @@ app.post("/job", JobUpload.single("poster"), (req, res) => {
         .json({ error: "Error creating job", details: err.message });
     });
 });
+
+
+// ---------------------------------------------
+// Route to get Job details of company
+app.get("/company/getJobs/:companyId", async (req, res) => {
+  try {
+    const companyId = req.params.companyId;
+
+    // SQL Query
+    const query = `
+      SELECT 
+          job.id AS jobId,
+          job.name AS jobName,
+          job.position,
+          job.postedDate,
+          job.description AS jobDescription,
+          job.requirements AS jobRequirements,
+          job.image AS jobImage,
+          job.type AS jobType,
+          company.CompanyId AS companyId,
+          company.CompanyName AS companyName,
+          company.CompanyDescription AS companyDescription,
+          CAST(company.CompanyLogo AS VARCHAR(MAX)) AS companyLogo,
+          company.CompanyLocation
+      FROM job
+      JOIN company ON job.companyId = company.CompanyId
+      WHERE job.companyId = @companyId
+      ORDER BY job.postedDate DESC`;
+
+    // Connect to SQL Server and execute the query
+    const pool =  await sql.connect(dbConfig);
+    const result = await pool.request()
+      .input("companyId", sql.VarChar, companyId) // Use parameterized query
+      .query(query);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("Database Error:", err);
+    res.status(500).json({ error: "Internal Server Error", details: err.message });
+  }
+});
+
+
+
 
 // Start the server
 app.listen(8800, () => {
