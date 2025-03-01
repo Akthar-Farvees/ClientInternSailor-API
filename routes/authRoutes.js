@@ -21,7 +21,7 @@ router.post("/login", async (req, res) => {
         const request = new sql.Request();
         request.input("email", sql.VarChar, email);
 
-        const query = `SELECT CompanyUserId, Email, Password, Status FROM CompanyUser WHERE Email = @email`;
+        const query = `SELECT CompanyUserId, CompanyId, Email, Password, Status FROM CompanyUser WHERE Email = @email`;
         console.log("Executing query:", query);
 
         const result = await request.query(query);
@@ -56,7 +56,7 @@ router.post("/login", async (req, res) => {
 
         res.json({
             token,
-            user: { id: user.ID, email: user.Email },
+            user: { id: user.ID, email: user.Email, companyId: user.CompanyId },
         });
 
     } catch (error) {
