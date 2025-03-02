@@ -11,6 +11,7 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/authRoutes.js";
+import CompanyChild from "./CompanySubListData/CompanyChild.js";
 
 import dbConfig, { connectDB } from "./database/dbConfig.js";
 
@@ -83,8 +84,12 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
       companyLocation,
       userMobile,
       password,
+      industryId,
+      departmentId,
+      noEmployeeId,
     } = req.body;
     const companyLogo = req.file ? req.file.filename : null;
+
 
     if (
       !firstName ||
@@ -95,12 +100,18 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
       !userMobile ||
       !companyName ||
       !companyDescription ||
-      !companyLocation
+      !companyLocation ||
+      !industryId ||
+      !noEmployeeId ||
+      !departmentId
     ) {
       return res
         .status(400)
         .json({ message: "All required fields must be filled." });
     }
+
+    const departmentIDs = typeof departmentId === "string" ? departmentId.split(",") : departmentId;
+
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -125,18 +136,32 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     const otp = generateOTP();
 
     const insertCompanyQuery = `
-      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation) 
+      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation, IndustryID, NoOfEmployeeID) 
       OUTPUT INSERTED.CompanyId
-      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation)
+      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation, @industryId, @noEmployeeId)
     `;
     const insertCompanyRequest = new sql.Request();
     insertCompanyRequest.input("companyName", sql.VarChar, companyName);
     insertCompanyRequest.input("companyDescription", sql.VarChar, companyDescription);
     insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
     insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
+    insertCompanyRequest.input("IndustryID", sql.UniqueIdentifier, industryId);
+    insertCompanyRequest.input("noEmployeeId", sql.UniqueIdentifier, noEmployeeId);
 
     const companyResult = await insertCompanyRequest.query(insertCompanyQuery);
     const companyId = companyResult.recordset[0].CompanyId; // Get the inserted CompanyId
+
+
+    for (const depId of departmentIDs) {
+      const insertDepartmentQuery = `
+        INSERT INTO CompanyDepartment (CompanyId, DepartmentId) VALUES (@companyId, @departmentId)
+      `;
+      const insertDepartmentRequest = new sql.Request();
+      insertDepartmentRequest.input("companyId", sql.UniqueIdentifier, companyId);
+      insertDepartmentRequest.input("departmentId", sql.UniqueIdentifier, depId);
+      await insertDepartmentRequest.query(insertDepartmentQuery);
+    }
+
 
     // Insert into CompanyUser with the retrieved CompanyId
     const insertUserQuery = `
@@ -348,6 +373,10 @@ app.post("/resend-otp", async (req, res) => {
 
 // Auth Route
 app.use("/api/auth", authRoutes);
+
+// Auth Route
+app.use("/company-child", CompanyChild);
+
 
 // ---------------------------------------------
 // Route to get job and company details
