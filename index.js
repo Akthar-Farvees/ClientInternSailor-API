@@ -369,6 +369,39 @@ app.post("/resend-otp", async (req, res) => {
 });
 
 
+// Company Dashboard Company information
+app.get("/company/dashboard/info/:CompanyID", async (req, res) => {
+  try {
+    const { CompanyID } = req.params; // Get industryID from request URL
+
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool
+      .request()
+      .input("CompanyID", sql.UniqueIdentifier, CompanyID) // Secure parameterized query
+      .query(`
+        SELECT 
+          C.CompanyName, 
+          C.CompanyDescription, 
+          C.CompanyLogo, 
+          C.CompanyLocation,
+          I.IndustryName,
+          E.NoOfEmployeeType
+        FROM company C
+        INNER JOIN Industries I ON C.IndustryID = I.IndustryID
+        INNER JOIN NoOfEmployees E ON C.NoOfEmployeeID = E.NoOfEmployeeID
+        WHERE C.CompanyID = @CompanyID
+      `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("Error fetching companies:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
+
 
 
 // Auth Route
