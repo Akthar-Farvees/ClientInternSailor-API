@@ -90,95 +90,89 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
       departmentId,
       noEmployeeId,
     } = req.body;
+
     const companyLogo = req.file ? req.file.filename : null;
-
-
-    if (
-      !firstName ||
-      !lastName ||
-      !username ||
-      !email ||
-      !password ||
-      !userMobile ||
-      !companyName ||
-      !companyDescription ||
-      !companyLocation ||
-      !industryId ||
-      !noEmployeeId ||
-      !departmentId
-    ) {
-      return res
-        .status(400)
-        .json({ message: "All required fields must be filled." });
-    }
-
     const departmentIDs = typeof departmentId === "string" ? departmentId.split(",") : departmentId;
-
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    console.log("Connecting to database...");
     await sql.connect(dbConfig);
 
     // Check if user exists already by email or username
-    const userCheckQuery = `SELECT * FROM CompanyUser WHERE Email = @email OR username = @username`;
+    const userCheckQuery = `SELECT * FROM CompanyUser WHERE Email = @Email OR Username = @Username`;
     const userCheckRequest = new sql.Request();
-    userCheckRequest.input("email", sql.VarChar, email);
-    userCheckRequest.input("username", sql.VarChar, username); // Declare username parameter here
-    const userCheck = await userCheckRequest.query(userCheckQuery);
-
-    if (userCheck.recordset.length > 0) {
+    userCheckRequest.input("Email", sql.VarChar, email);
+    userCheckRequest.input("Username", sql.VarChar, username);
+    const userExists = await userCheckRequest.query(userCheckQuery);
+    if (userExists.recordset.length > 0) {
       return res.status(400).json({
         error: "EMAIL_USERNAME_ALREADY_REGISTERED",
         message: "Email or Username is already registered.",
       });
     }
 
-    // Generate OTP
     const otp = generateOTP();
+    let companyId;
 
-    const insertCompanyQuery = `
-      INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation, IndustryID, NoOfEmployeeID) 
-      OUTPUT INSERTED.CompanyId
-      VALUES (@companyName, @companyDescription, @companyLogo, @companyLocation, @industryId, @noEmployeeId)
-    `;
-    const insertCompanyRequest = new sql.Request();
-    insertCompanyRequest.input("companyName", sql.VarChar, companyName);
-    insertCompanyRequest.input("companyDescription", sql.VarChar, companyDescription);
-    insertCompanyRequest.input("companyLogo", sql.VarChar, companyLogo);
-    insertCompanyRequest.input("companyLocation", sql.VarChar, companyLocation);
-    insertCompanyRequest.input("IndustryID", sql.UniqueIdentifier, industryId);
-    insertCompanyRequest.input("noEmployeeId", sql.UniqueIdentifier, noEmployeeId);
+    // Check if company fields are all present or not
+    const isCompanyFieldsEmpty = !industryId || !noEmployeeId || !departmentId || !companyLogo || !companyLocation || !companyDescription;
 
-    const companyResult = await insertCompanyRequest.query(insertCompanyQuery);
-    const companyId = companyResult.recordset[0].CompanyId; // Get the inserted CompanyId
+    if (isCompanyFieldsEmpty) {
+      // Just get existing CompanyId from Company table
+      const companyIdQuery = `SELECT CompanyId FROM Company WHERE CompanyName = @CompanyName`;
+      const companyIdRequest = new sql.Request();
+      companyIdRequest.input("CompanyName", sql.VarChar, companyName);
+      const result = await companyIdRequest.query(companyIdQuery);
 
+      if (result.recordset.length === 0) {
+        return res.status(400).json({
+          error: "COMPANY_NOT_FOUND",
+          message: "Company not found with given name.",
+        });
+      }
 
-    for (const depId of departmentIDs) {
-      const insertDepartmentQuery = `
-        INSERT INTO CompanyDepartment (CompanyId, DepartmentId) VALUES (@companyId, @departmentId)
+      companyId = result.recordset[0].CompanyId;
+    } else {
+      // Insert into Company table
+      const insertCompanyQuery = `
+        INSERT INTO Company (CompanyName, CompanyDescription, CompanyLogo, CompanyLocation, IndustryID, NoOfEmployeeID)
+        OUTPUT INSERTED.CompanyId
+        VALUES (@CompanyName, @CompanyDescription, @CompanyLogo, @CompanyLocation, @IndustryID, @NoOfEmployeeID)
       `;
-      const insertDepartmentRequest = new sql.Request();
-      insertDepartmentRequest.input("companyId", sql.UniqueIdentifier, companyId);
-      insertDepartmentRequest.input("departmentId", sql.UniqueIdentifier, depId);
-      await insertDepartmentRequest.query(insertDepartmentQuery);
+      const insertCompanyRequest = new sql.Request();
+      insertCompanyRequest.input("CompanyName", sql.VarChar, companyName);
+      insertCompanyRequest.input("CompanyDescription", sql.VarChar, companyDescription);
+      insertCompanyRequest.input("CompanyLogo", sql.VarChar, companyLogo);
+      insertCompanyRequest.input("CompanyLocation", sql.VarChar, companyLocation);
+      insertCompanyRequest.input("IndustryID", sql.UniqueIdentifier, industryId);
+      insertCompanyRequest.input("NoOfEmployeeID", sql.UniqueIdentifier, noEmployeeId);
+
+      const companyResult = await insertCompanyRequest.query(insertCompanyQuery);
+      companyId = companyResult.recordset[0].CompanyId;
+
+      // Insert into CompanyDepartment table
+      for (const depId of departmentIDs) {
+        const insertDepartmentQuery = `INSERT INTO CompanyDepartment (CompanyId, DepartmentId) VALUES (@CompanyId, @DepartmentId)`;
+        const insertDepartmentRequest = new sql.Request();
+        insertDepartmentRequest.input("CompanyId", sql.UniqueIdentifier, companyId);
+        insertDepartmentRequest.input("DepartmentId", sql.UniqueIdentifier, depId);
+        await insertDepartmentRequest.query(insertDepartmentQuery);
+      }
     }
 
-
-    // Insert into CompanyUser with the retrieved CompanyId
+    // Insert into CompanyUser table
     const insertUserQuery = `
-      INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP, LastOTPRequestedAt, CompanyCreatedDate, CompanyId) 
-      VALUES (@firstName, @lastName, @username, @email, @hashedPassword, @userMobile, 'OTP_PENDING', @otp, GETUTCDATE(), GETDATE(), @companyId)
+      INSERT INTO CompanyUser (FirstName, LastName, Username, Email, Password, UserMobile, Status, OTP, LastOTPRequestedAt, CompanyCreatedDate, CompanyId)
+      VALUES (@FirstName, @LastName, @Username, @Email, @Password, @UserMobile, 'OTP_PENDING', @OTP, GETUTCDATE(), GETDATE(), @CompanyId)
     `;
     const insertUserRequest = new sql.Request();
-    insertUserRequest.input("firstName", sql.VarChar, firstName);
-    insertUserRequest.input("lastName", sql.VarChar, lastName);
-    insertUserRequest.input("username", sql.VarChar, username);
-    insertUserRequest.input("email", sql.VarChar, email);
-    insertUserRequest.input("hashedPassword", sql.VarChar, hashedPassword);
-    insertUserRequest.input("userMobile", sql.VarChar, userMobile);
-    insertUserRequest.input("otp", sql.Int, otp);
-    insertUserRequest.input("companyId", sql.UniqueIdentifier, companyId); // Add CompanyId
+    insertUserRequest.input("FirstName", sql.VarChar, firstName);
+    insertUserRequest.input("LastName", sql.VarChar, lastName);
+    insertUserRequest.input("Username", sql.VarChar, username);
+    insertUserRequest.input("Email", sql.VarChar, email);
+    insertUserRequest.input("Password", sql.VarChar, hashedPassword);
+    insertUserRequest.input("UserMobile", sql.VarChar, userMobile);
+    insertUserRequest.input("OTP", sql.Int, otp);
+    insertUserRequest.input("CompanyId", sql.UniqueIdentifier, companyId);
 
     await insertUserRequest.query(insertUserQuery);
 
@@ -186,7 +180,6 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const otpTemplatePath = path.join(__dirname, "otpTemplate.html");
     const htmlTemplate = fs.readFileSync(otpTemplatePath, "utf8");
-
     const htmlContent = htmlTemplate
       .replace("{{otp}}", otp)
       .replace("{{year}}", new Date().getFullYear());
@@ -194,23 +187,18 @@ app.post("/register", upload.single("companyLogo"), async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your OTP Code",
+      subject: "InternSailor Account Creation Code",
       html: htmlContent,
     };
-
     await transporter.sendMail(mailOptions);
 
-    console.log("OTP sent.");
-    return res
-      .status(200)
-      .json({ message: "OTP sent to email. Please verify." });
+    return res.status(200).json({ message: "OTP sent to email. Please verify." });
   } catch (error) {
     console.error("Error in registration:", error);
-    return res
-      .status(500)
-      .json({ message: "Internal Server Error", error: error.message });
+    return res.status(500).json({ message: "Internal Server Error", error: error.message });
   }
 });
+
 
 // Verify OTP API
 app.post("/verify-otp", async (req, res) => {
@@ -288,8 +276,6 @@ app.post("/resend-otp", async (req, res) => {
       return res.status(400).json({ message: "Email is required." });
     }
 
-    console.log(`Resend OTP requested for: ${email}`);
-
     // Connect to DB
     await sql.connect(dbConfig);
 
@@ -355,7 +341,7 @@ app.post("/resend-otp", async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your OTP Code (Resent)",
+      subject: "InternSailor OTP Code",
       html: htmlContent,
     };
 
@@ -655,6 +641,151 @@ app.get("/api/check-domain", async (req, res) => {
     res.status(500).json({ error: "Server error." });
   }
 });
+
+
+
+
+// Step 1: Request to send OTP
+app.post("/api/forgot-password", async (req, res) => {
+  const { Email } = req.body;
+
+  // Simple validation
+  if (!Email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    // Check if the user exists
+    const userCheck = await pool.request()
+      .input("Email", sql.VarChar, Email)
+      .query("SELECT * FROM CompanyUser WHERE Email = @Email");
+
+    if (userCheck.recordset.length === 0) {
+      return res.status(404).json({ message: "Email not found" });
+    }
+
+    // Generate OTP and set timestamp
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const lastOTPRequestedAt = new Date();
+
+    // Update the user with OTP and timestamp
+    await pool.request()
+      .input("Email", sql.VarChar, Email)
+      .input("OTP", sql.VarChar, otp)
+      .input("LastOTPRequestedAt", sql.DateTime, lastOTPRequestedAt)
+      .query(`
+        UPDATE CompanyUser 
+        SET OTP = @OTP, LastOTPRequestedAt = @LastOTPRequestedAt 
+        WHERE Email = @Email
+      `);
+
+      const __dirname = path.dirname(fileURLToPath(import.meta.url));
+      const otpTemplatePath = path.join(__dirname, "otpTemplate.html");
+      const htmlTemplate = fs.readFileSync(otpTemplatePath, "utf8");
+      const htmlContent = htmlTemplate
+        .replace("{{otp}}", otp)
+        .replace("{{year}}", new Date().getFullYear());
+
+    // Send the OTP via email
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: Email,
+      subject: "InternSailor Forget Password Code",
+      html: htmlContent,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: "OTP sent successfully" });
+
+  } catch (err) {
+    console.error("Error in forgot-password:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// Step 2: Verify OTP
+app.post("/api/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required." });
+    }
+
+    await sql.connect(dbConfig);
+
+    const request = new sql.Request();
+    request.input("email", sql.NVarChar, email);
+    request.input("otp", sql.NVarChar, otp);
+
+    const otpQuery = `SELECT * FROM CompanyUser WHERE Email = @email AND OTP = @otp`;
+    const result = await request.query(otpQuery);
+
+    if (result.recordset.length === 0) {
+      return res.status(400).json({ error: "INVALID_OR_EXPIRED_OTP", message: "Invalid OTP or expired." });
+    }
+
+
+    return res
+      .status(200)
+      .json({ message: "OTP verified. Please Change your Password!" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Step 3: Reset Password
+app.post("/api/reset-password", async (req, res) => {
+  const { email, password, confirmPassword } = req.body;
+
+  if (!email || !password || !confirmPassword) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ message: "Passwords do not match" });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    // Step 1: Check if OTP exists and is not null for the user
+    const otpCheck = await pool.request()
+      .input("email", sql.VarChar, email)
+      .query("SELECT OTP FROM CompanyUser WHERE Email = @email");
+
+    const user = otpCheck.recordset[0];
+
+    if (!user || !user.OTP) {
+      return res.status(403).json({ message: "OTP verification required before resetting password" });
+    }
+
+    // Step 2: Hash the new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Step 3: Update password and clear OTP
+    await pool.request()
+      .input("email", sql.VarChar, email)
+      .input("password", sql.VarChar, hashedPassword)
+      .query(`
+        UPDATE CompanyUser 
+        SET Password = @password, OTP = NULL
+        WHERE Email = @email
+      `);
+
+    res.status(200).json({ message: "Password reset successful" });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 
 
