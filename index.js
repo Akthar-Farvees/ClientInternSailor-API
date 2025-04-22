@@ -13,6 +13,8 @@ import { fileURLToPath } from "url";
 import authRoutes from "./routes/authRoutes.js";
 import CompanyChild from "./CompanySubListData/CompanyChild.js";
 
+import jobUpdateRoute from "./events/jobUpdate.js"; 
+
 import dbConfig, { connectDB } from "./database/dbConfig.js";
 
 DotEnv.config();
@@ -411,6 +413,9 @@ app.use("/api/auth", authRoutes);
 app.use("/company-child", CompanyChild);
 
 
+// JobUpdate
+app.use(jobUpdateRoute);
+
 // ---------------------------------------------
 // Route to get job and company details
 app.get("/company", (req, res) => {
@@ -491,6 +496,47 @@ app.post("/company", upload.single("image"), (req, res) => {
     });
 });
 
+
+//Delete Job
+app.delete('/delete-job/:id', async (req, res) => {
+  const jobId = req.params.id;
+
+  // Input validation
+  if (!jobId) {
+    return res.status(400).json({ error: 'Job ID is required' });
+  }
+
+  try {
+    // Get the pool from the connection pool manager
+    const pool = await sql.connect(dbConfig);
+
+    // SQL query with parameterized input to prevent SQL injection
+    const query = `
+      DELETE J
+      FROM JOB J
+      INNER JOIN Company C 
+      ON J.CompanyId = C.CompanyId
+      WHERE J.ID = @jobId`;
+
+    // Execute the query using parameterized input
+    const result = await pool.request()
+      .input('jobId', sql.UniqueIdentifier, jobId) // Use the correct SQL type (e.g., UniqueIdentifier for GUIDs)
+      .query(query);
+
+    // If no rows were affected, the job was not found
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Successful deletion
+    return res.status(200).json({ message: 'Job deleted successfully' });
+  } catch (err) {
+    // Internal server error
+    console.error('Error executing query', err);
+    return res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Job Registration
 app.post("/job", JobUpload.single("image"), (req, res) => {
   const { jobName, position, description, requirements, type, companyId } =
@@ -564,6 +610,49 @@ app.get("/company/getJobs/:companyId", async (req, res) => {
   } catch (err) {
     console.error("Database Error:", err);
     res.status(500).json({ error: "Internal Server Error", details: err.message });
+  }
+});
+
+
+app.get("/api/check-domain", async (req, res) => {
+  try {
+    const { domain } = req.query;
+
+    if (!domain) {
+      return res.status(400).json({ message: "Domain is required." });
+    }
+
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input("domain", sql.VarChar, `%@${domain}`)
+      .query(`
+        SELECT TOP 1 
+          cu.CompanyId, 
+          c.CompanyName
+        FROM CompanyUser cu
+        INNER JOIN company c ON cu.CompanyId = c.CompanyId
+        WHERE cu.Email LIKE @domain
+      `);
+
+    if (result.recordset.length > 0) {
+      const { CompanyId, CompanyName } = result.recordset[0];
+      return res.status(200).json({ 
+        exists: true, 
+        CompanyId,
+        CompanyName,
+        message: "Domain already registered." 
+      });
+    } else {
+      return res.status(200).json({ 
+        exists: false, 
+        message: "Domain not found." 
+      });
+    }
+
+  } catch (err) {
+    console.error("Error checking domain:", err);
+    res.status(500).json({ error: "Server error." });
   }
 });
 
