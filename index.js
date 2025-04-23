@@ -647,10 +647,10 @@ app.get("/api/check-domain", async (req, res) => {
 
 // Step 1: Request to send OTP
 app.post("/api/forgot-password", async (req, res) => {
-  const { Email } = req.body;
+  const { email } = req.body;
 
   // Simple validation
-  if (!Email) {
+  if (!email) {
     return res.status(400).json({ message: "Email is required" });
   }
 
@@ -659,11 +659,11 @@ app.post("/api/forgot-password", async (req, res) => {
 
     // Check if the user exists
     const userCheck = await pool.request()
-      .input("Email", sql.VarChar, Email)
-      .query("SELECT * FROM CompanyUser WHERE Email = @Email");
+      .input("email", sql.VarChar, email)
+      .query("SELECT * FROM CompanyUser WHERE Email = @email");
 
     if (userCheck.recordset.length === 0) {
-      return res.status(404).json({ message: "Email not found" });
+      return res.status(404).json({code: 'EMAIL_NOT_FOUND', message: "Email not found" });
     }
 
     // Generate OTP and set timestamp
@@ -672,13 +672,13 @@ app.post("/api/forgot-password", async (req, res) => {
 
     // Update the user with OTP and timestamp
     await pool.request()
-      .input("Email", sql.VarChar, Email)
+      .input("email", sql.VarChar, email)
       .input("OTP", sql.VarChar, otp)
       .input("LastOTPRequestedAt", sql.DateTime, lastOTPRequestedAt)
       .query(`
         UPDATE CompanyUser 
         SET OTP = @OTP, LastOTPRequestedAt = @LastOTPRequestedAt 
-        WHERE Email = @Email
+        WHERE Email = @email
       `);
 
       const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -691,7 +691,7 @@ app.post("/api/forgot-password", async (req, res) => {
     // Send the OTP via email
     const mailOptions = {
       from: process.env.EMAIL_USER,
-      to: Email,
+      to: email,
       subject: "InternSailor Forget Password Code",
       html: htmlContent,
     };
@@ -757,7 +757,7 @@ app.post("/api/reset-password", async (req, res) => {
     // Step 1: Check if OTP exists and is not null for the user
     const otpCheck = await pool.request()
       .input("email", sql.VarChar, email)
-      .query("SELECT OTP FROM CompanyUser WHERE Email = @email");
+      .query("SELECT OTP, Password FROM CompanyUser WHERE Email = @email");
 
     const user = otpCheck.recordset[0];
 
@@ -765,10 +765,26 @@ app.post("/api/reset-password", async (req, res) => {
       return res.status(403).json({ message: "OTP verification required before resetting password" });
     }
 
-    // Step 2: Hash the new password
+    // Step 2: Check if new password matches any previous password (including current one)
+    const passwordHistoryCheck = await pool.request()
+      .input("email", sql.VarChar, email)
+      .query("SELECT Password FROM CompanyUser WHERE Email = @email");
+
+    const storedHashes = passwordHistoryCheck.recordset.map(row => row.Password);
+
+    for (let storedHash of storedHashes) {
+      const isSame = await bcrypt.compare(password, storedHash);
+      if (isSame) {
+        return res.status(400).json({
+          message: "New password must be different from your previous passwords"
+        });
+      }
+    }
+
+    // Step 3: Hash the new password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Step 3: Update password and clear OTP
+    // Step 4: Update password and clear OTP
     await pool.request()
       .input("email", sql.VarChar, email)
       .input("password", sql.VarChar, hashedPassword)
@@ -786,6 +802,29 @@ app.post("/api/reset-password", async (req, res) => {
   }
 });
 
+
+app.post('/api/feedback', async (req, res) => {
+  const { name, email, message } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ message: 'All fields (Name, Email, and Message) are required.' });
+  }
+
+  try {
+    // Connect to SQL Server
+    await sql.connect(dbConfig);
+
+    // Insert feedback into the database
+    const result = await sql.query`INSERT INTO feedbacks (Name, Email, Message) VALUES (${name}, ${email}, ${message})`;
+
+    // Send success response
+    res.status(200).json({ message: 'Feedback submitted successfully!' });
+  } catch (error) {
+    // Handle any error
+    console.error(error);
+    res.status(500).json({ message: 'An error occurred while submitting feedback.' });
+  }
+});
 
 
 
