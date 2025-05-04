@@ -7,6 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Feedbacks {
   FeedbackId  String    @id @db.Uuid
   Name        String?   @db.VarChar(255)
@@ -15,8 +16,9 @@ model Feedbacks {
   CreatedDate DateTime? @db.Timestamp(6)
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model adminusers {
-  AdminUserID String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  AdminUserID String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   FirstName   String    @db.VarChar(100)
   LastName    String    @db.VarChar(100)
   Username    String    @unique @db.VarChar(255)
@@ -25,8 +27,9 @@ model adminusers {
   CreatedDate DateTime? @default(now()) @db.Timestamp(6)
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model company {
-  CompanyId          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  CompanyId          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   CompanyName        String              @db.VarChar(255)
   CompanyDescription String
   CompanyLogo        String?
@@ -40,16 +43,18 @@ model company {
   job                job[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model companydepartment {
-  CompanyDepartmentID String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  CompanyDepartmentID String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   CompanyId           String?      @db.Uuid
   DepartmentId        String?      @db.Uuid
   company             company?     @relation(fields: [CompanyId], references: [CompanyId], onDelete: NoAction, onUpdate: NoAction, map: "FK_CompanyDepartment_Company")
   departments         departments? @relation(fields: [DepartmentId], references: [DepartmentID], onDelete: NoAction, onUpdate: NoAction, map: "FK_CompanyDepartment_Department")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model companyuser {
-  CompanyUserId      String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  CompanyUserId      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   FirstName          String?   @db.VarChar(255)
   LastName           String?   @db.VarChar(255)
   Username           String?   @db.VarChar(255)
@@ -65,20 +70,23 @@ model companyuser {
   company            company?  @relation(fields: [CompanyId], references: [CompanyId], onDelete: NoAction, onUpdate: NoAction, map: "FK_CompanyUser_Company")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model departments {
-  DepartmentID      String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  DepartmentID      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   DepartmentName    String              @db.VarChar(255)
   companydepartment companydepartment[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model industries {
-  IndustryID   String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  IndustryID   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   IndustryName String    @db.VarChar(255)
   company      company[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model job {
-  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String?  @db.VarChar(255)
   position     String   @db.VarChar(300)
   postedDate   DateTime @db.Timestamp(6)
@@ -90,8 +98,9 @@ model job {
   company      company? @relation(fields: [companyId], references: [CompanyId], onDelete: NoAction, onUpdate: NoAction, map: "FK_CompanyId")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model noofemployees {
-  NoOfEmployeeID   String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  NoOfEmployeeID   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   NoOfEmployeeType String    @db.VarChar(255)
   company          company[]
 }
