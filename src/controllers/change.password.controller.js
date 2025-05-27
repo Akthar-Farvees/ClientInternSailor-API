@@ -140,7 +140,7 @@ export const submitFeedback = async (req, res) => {
   try {
     await prisma.feedbacks.create({
       data: {
-        FeedbackId: crypto.randomUUID(),
+        // FeedbackId: crypto.randomUUID(),
         Name: name,
         Email: email,
         Message: message,
