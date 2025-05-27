@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 
 // Send OTP to Email
@@ -140,7 +141,7 @@ export const submitFeedback = async (req, res) => {
   try {
     await prisma.feedbacks.create({
       data: {
-        // FeedbackId: crypto.randomUUID(),
+        FeedbackId: crypto.randomUUID(),
         Name: name,
         Email: email,
         Message: message,
