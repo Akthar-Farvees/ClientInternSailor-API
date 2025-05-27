@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import { fileURLToPath } from 'url';
 import { transporter } from '../config/email.js';
 import prisma from '../config/prisma.config.js'
+import cloudinary from '../config/cloudinary.config.js';
+import streamifier from 'streamifier';
 
 // Helper function for OTP generation
 function generateOTP() {
@@ -13,7 +15,7 @@ function generateOTP() {
 // Export the function directly - IMPORTANT: remove any nested function structure
 export const companyUserRegistration = async (req, res) => {
   try {
-    console.log("Request received:", req.body);
+    // console.log("Request received:", req.body);
 
     const {
       firstName,
@@ -26,15 +28,38 @@ export const companyUserRegistration = async (req, res) => {
       userMobile,
       password,
       industryId,
-      departmentId,
+      // departmentId,
       noEmployeeId,
     } = req.body;
 
-    const companyLogo = req.file ? req.file.filename : null;
-    const departmentIDs =
-      typeof departmentId === "string"
-        ? departmentId.split(",")
-        : departmentId;
+
+    // const companyLogo = req.file ? req.file.filename : null;
+    let companyLogo = null;
+    if (req.file) {
+      const streamUpload = () => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'company_logos',
+              resource_type: 'image',
+            },
+            (error, result) => {
+              if (result) resolve(result.secure_url);
+              else reject(error);
+            }
+          );
+          streamifier.createReadStream(req.file.buffer).pipe(stream);
+        });
+      };
+      companyLogo = await streamUpload();
+    }
+
+
+    //Hide departments field on frontend
+    // const departmentIDs =
+    //   typeof departmentId === "string"
+    //     ? departmentId.split(",")
+    //     : departmentId;
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Check if user exists already by email or username
@@ -58,7 +83,7 @@ export const companyUserRegistration = async (req, res) => {
     const isCompanyFieldsEmpty =
       !industryId ||
       !noEmployeeId ||
-      !departmentId ||
+      // !departmentId ||
       !companyLogo ||
       !companyLocation ||
       !companyDescription;
@@ -98,14 +123,14 @@ export const companyUserRegistration = async (req, res) => {
       companyId = newCompany.CompanyId;
 
       // Insert into CompanyDepartment table
-      for (const depId of departmentIDs) {
-        await prisma.companydepartment.create({
-          data: {
-            CompanyId: companyId,
-            DepartmentId: depId,
-          },
-        });
-      }
+      // for (const depId of departmentIDs) {
+      //   await prisma.companydepartment.create({
+      //     data: {
+      //       CompanyId: companyId,
+      //       DepartmentId: depId,
+      //     },
+      //   });
+      // }
     }
 
     // Insert into CompanyUser table

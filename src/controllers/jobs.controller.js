@@ -1,9 +1,31 @@
 import prisma from "../config/prisma.config.js";
 import moment from "moment-timezone";
+import cloudinary from "../config/cloudinary.config.js";
+import streamifier from "streamifier";
 
 export const createJob = async (req, res) => {
     const { jobName, position, description, requirements, type, companyId } = req.body;
-    const image = req.file ? req.file.filename : null;
+    // const image = req.file ? req.file.filename : null;
+
+        let image = null;
+        if (req.file) {
+          const streamUpload = () => {
+            return new Promise((resolve, reject) => {
+              const stream = cloudinary.uploader.upload_stream(
+                {
+                  folder: 'job_posters',
+                  resource_type: 'image',
+                },
+                (error, result) => {
+                  if (result) resolve(result.secure_url);
+                  else reject(error);
+                }
+              );
+              streamifier.createReadStream(req.file.buffer).pipe(stream);
+            });
+          };
+          image = await streamUpload();
+        }
   
     // Format posted date in Asia/Colombo time
     const postedDate = moment.tz("Asia/Colombo").toDate();
