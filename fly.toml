@@ -1,15 +1,12 @@
-# fly.toml app configuration file generated for internsailor-api on 2025-08-17T13:15:28+05:30
+# fly.toml app configuration file generated for clientinternsailor-api on 2025-08-17T08:15:09Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'internsailor-api'
+app = 'clientinternsailor-api'
 primary_region = 'sin'
 
 [build]
-
-[deploy]
-  # release_command = 'npx prisma migrate deploy'
 
 [http_service]
   internal_port = 3000
@@ -23,3 +20,4 @@ primary_region = 'sin'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 1024
