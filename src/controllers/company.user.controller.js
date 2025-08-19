@@ -12,10 +12,11 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Export the function directly - IMPORTANT: remove any nested function structure
+// ===== BACKEND CONTROLLER FIX =====
 export const companyUserRegistration = async (req, res) => {
   try {
-    // console.log("Request received:", req.body);
+    console.log("Request received:", req.body);
+    console.log("File received:", req.file); // Add this for debugging
 
     const {
       firstName,
@@ -28,38 +29,46 @@ export const companyUserRegistration = async (req, res) => {
       userMobile,
       password,
       industryId,
-      // departmentId,
       noEmployeeId,
     } = req.body;
 
-
-    // const companyLogo = req.file ? req.file.filename : null;
-    let companyLogo = null;
-    if (req.file) {
-      const streamUpload = () => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'company_logos',
-              resource_type: 'image',
-            },
-            (error, result) => {
-              if (result) resolve(result.secure_url);
-              else reject(error);
-            }
-          );
-          streamifier.createReadStream(req.file.buffer).pipe(stream);
-        });
-      };
-      companyLogo = await streamUpload();
+    // Validate required fields
+    if (!firstName || !lastName || !username || !email || !companyName || !userMobile || !password) {
+      return res.status(400).json({
+        error: "MISSING_REQUIRED_FIELDS",
+        message: "Please fill in all required fields.",
+      });
     }
 
+    let companyLogo = null;
+    if (req.file) {
+      try {
+        const streamUpload = () => {
+          return new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              {
+                folder: 'company_logos',
+                resource_type: 'image',
+              },
+              (error, result) => {
+                if (result) resolve(result.secure_url);
+                else reject(error);
+              }
+            );
+            streamifier.createReadStream(req.file.buffer).pipe(stream);
+          });
+        };
+        companyLogo = await streamUpload();
+        console.log("Logo uploaded successfully:", companyLogo);
+      } catch (uploadError) {
+        console.error("Cloudinary upload error:", uploadError);
+        return res.status(500).json({
+          error: "FILE_UPLOAD_FAILED",
+          message: "Failed to upload company logo.",
+        });
+      }
+    }
 
-    //Hide departments field on frontend
-    // const departmentIDs =
-    //   typeof departmentId === "string"
-    //     ? departmentId.split(",")
-    //     : departmentId;
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Check if user exists already by email or username
@@ -83,7 +92,6 @@ export const companyUserRegistration = async (req, res) => {
     const isCompanyFieldsEmpty =
       !industryId ||
       !noEmployeeId ||
-      // !departmentId ||
       !companyLogo ||
       !companyLocation ||
       !companyDescription;
@@ -102,35 +110,25 @@ export const companyUserRegistration = async (req, res) => {
       if (!existingCompany) {
         return res.status(400).json({
           error: "COMPANY_NOT_FOUND",
-          message: "Company not found with given name.",
+          message: "Company not found with given name. Please provide company details.",
         });
       }
 
       companyId = existingCompany.CompanyId;
     } else {
-      // Insert into Company table
+      // Insert into Company table with proper integer conversion
       const newCompany = await prisma.company.create({
         data: {
           CompanyName: companyName,
           CompanyDescription: companyDescription,
           CompanyLogo: companyLogo,
           CompanyLocation: companyLocation,
-          IndustryID: industryId,
-          NoOfEmployeeID: noEmployeeId,
+          IndustryID: parseInt(industryId), // Ensure it's an integer
+          NoOfEmployeeID: parseInt(noEmployeeId), // Ensure it's an integer
         },
       });
 
       companyId = newCompany.CompanyId;
-
-      // Insert into CompanyDepartment table
-      // for (const depId of departmentIDs) {
-      //   await prisma.companydepartment.create({
-      //     data: {
-      //       CompanyId: companyId,
-      //       DepartmentId: depId,
-      //     },
-      //   });
-      // }
     }
 
     // Insert into CompanyUser table
@@ -151,24 +149,29 @@ export const companyUserRegistration = async (req, res) => {
     });
 
     // Send OTP email
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const otpTemplatePath = path.join(__dirname, "../templates/otp.email/index.html");
-    const htmlTemplate = fs.readFileSync(otpTemplatePath, "utf8");
-    const htmlContent = htmlTemplate
-      .replace("{{otp}}", otp)
-      .replace("{{year}}", new Date().getFullYear());
+    try {
+      const __dirname = path.dirname(fileURLToPath(import.meta.url));
+      const otpTemplatePath = path.join(__dirname, "../templates/otp.email/index.html");
+      const htmlTemplate = fs.readFileSync(otpTemplatePath, "utf8");
+      const htmlContent = htmlTemplate
+        .replace("{{otp}}", otp)
+        .replace("{{year}}", new Date().getFullYear());
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "InternSailor Account Creation Code",
-      html: htmlContent,
-    };
-    await transporter.sendMail(mailOptions);
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: "InternSailor Account Creation Code",
+        html: htmlContent,
+      };
+      await transporter.sendMail(mailOptions);
+    } catch (emailError) {
+      console.error("Email sending error:", emailError);
+      // Don't fail the registration if email fails, but log it
+    }
 
     return res
       .status(200)
-      .json({ message: "OTP sent to email. Please verify." });
+      .json({ message: "Registration successful. OTP sent to email. Please verify." });
   } catch (error) {
     console.error("Error in registration:", error);
     return res

@@ -1,19 +1,24 @@
-// middleware.company.logo.upload.js
 import multer from 'multer';
 
-// Use memory storage for buffer access (required for Cloudinary stream upload)
+// Configure multer for memory storage (since you're using Cloudinary)
 const storage = multer.memoryStorage();
 
-// Create the multer instance
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // optional: 5MB limit
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Check file type
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!'), false);
+    }
   },
 });
 
 export default upload;
-
 
 
 
